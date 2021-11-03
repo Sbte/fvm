@@ -418,8 +418,8 @@ class Discretization:
             boundary_conditions.no_slip_top(atom)
             boundary_conditions.no_slip_bottom(atom)
         elif self.problem_type_equals('Differentially Heated Cavity'):
-            frc += boundary_conditions.temperature_east(atom, -1/2)
-            frc += boundary_conditions.temperature_west(atom, 1/2)
+            frc += boundary_conditions.temperature_east(atom, 0)
+            frc += boundary_conditions.temperature_west(atom, 1)
             boundary_conditions.no_slip_east(atom)
             boundary_conditions.no_slip_west(atom)
 

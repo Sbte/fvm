@@ -26,6 +26,16 @@ class Vector(Epetra.Vector):
 
     size = property(Epetra.Vector.GlobalLength)
 
+def gather(x):
+    local_elements = []
+    if x.Comm().MyPID() == 0:
+        local_elements = range(x.Map().NumGlobalElements())
+    local_map = Epetra.Map(-1, local_elements, 0, x.Comm())
+    importer = Epetra.Import(local_map, x.Map())
+    out = Epetra.Vector(local_map)
+    out.Import(x, importer, Epetra.Insert)
+    return out
+
 def ind2sub(nx, ny, nz, idx, dof=1):
     rem = idx
     var = rem % dof
