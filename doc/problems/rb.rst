@@ -32,7 +32,7 @@ with boundary conditions
 .. math:: \tilde x &= 0, A_x &:~& \tilde u = \tilde v = \tilde w = \frac{\partial \tilde T}{\partial \tilde x} = 0\\
           \tilde y &= 0, A_y &:~& \tilde u = \tilde v = \tilde w = \frac{\partial \tilde T}{\partial \tilde y} = 0\\
           \tilde z &= 0 &:~& \tilde u = \tilde v = \tilde w = 0, \tilde T = 1\\
-          \tilde z &= 1 &:~& \frac{\partial \tilde u}{\partial \tilde z} = \frac{\partial \tilde v}{\partial \tilde z} = \tilde w = 0, \frac{\partial \tilde T}{\partial \tilde z} = \mathrm{Bi} \tilde T
+          \tilde z &= 1 &:~& \frac{\partial \tilde u}{\partial \tilde z} = \frac{\partial \tilde v}{\partial \tilde z} = \tilde w = 0, \frac{\partial \tilde T}{\partial \tilde z} + \mathrm{Bi} \tilde T = 0
 
 Here $x$, $y$ and $z$ are scaled by $D$, and hence $A_x = L / D$ and $A_y = B / D$. The other quantities are scaled using $u = \\hat u \\nu / D$, $t = \\hat t D^2 / \\nu$, $p = \\hat p (\\mu \\nu / D^2) - \\rho_0 g z$, $T = (T_B - T_A) \\hat T + T_A$ and additionally $\\hat u = \\tilde u \\mathrm{Gr}^{1/2}$, $\\hat t = \\tilde t \\mathrm{Gr}^{-1/2}$, $\\hat p = \\tilde p \\mathrm{Gr}$, $\\hat T = \\tilde T$. Moreover, the Prandtl number is given by $\\mathrm{Pr} = \\nu / \\kappa_T$, the Rayleigh number by $\\mathrm{Ra} = (\\alpha_T g \\Delta T D^3) / (\\nu \\kappa_T)$, the Grashof number by $\\mathrm{Gr} = \\mathrm{Ra} / \\mathrm{Pr}$ and the Biot number is given by $\\mathrm{Bi} = h D / k$. All other quantities are defined in :ref:`symbols`.
 
@@ -53,7 +53,7 @@ with boundary conditions
 .. math:: \tilde x &= 0, A_x &:~& \tilde u = \tilde v = \tilde w = \frac{\partial \tilde T}{\partial \tilde x} = 0\\
           \tilde y &= 0, A_y &:~& \tilde u = \tilde v = \tilde w = \frac{\partial \tilde T}{\partial \tilde y} = 0\\
           \tilde z &= 0 &:~& \tilde u = \tilde v = \tilde w = \tilde T = 0\\
-          \tilde z &= 1 &:~& \frac{\partial \tilde u}{\partial \tilde z} = \frac{\partial \tilde v}{\partial \tilde z} = \tilde w = 0, \frac{\partial \tilde T}{\partial \tilde z} = \mathrm{Bi} \tilde T
+          \tilde z &= 1 &:~& \frac{\partial \tilde u}{\partial \tilde z} = \frac{\partial \tilde v}{\partial \tilde z} = \tilde w = 0, \frac{\partial \tilde T}{\partial \tilde z} + \mathrm{Bi} \tilde T = 0
 
 
 Parameters
