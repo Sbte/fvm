@@ -3,8 +3,9 @@ import pickle
 
 import matplotlib.pyplot as plt
 
+from transiflow.interface.SciPy import Interface
+
 from transiflow import Continuation
-from transiflow import Interface
 from transiflow import plot_utils
 from transiflow import utils
 
@@ -22,27 +23,27 @@ class Data:
         self.append(mu, numpy.max(utils.compute_streamfunction(x, interface)))
 
 
-def generate_plots(interface, x, sigma):
+def generate_plots(interface, x, name, beta):
     '''Generate plots for the stream function, vorticity and salinity and write them to a file'''
     psi_max = numpy.max(utils.compute_streamfunction(x, interface))
 
     plot_utils.plot_streamfunction(
-        x, interface, title=f'Stream function at $\\sigma={sigma:.2f}$ and $\\Psi_\\max={psi_max:.2e}$',
+        x, interface, title=f'Stream function at $\\beta={beta:.2f}$ and $\\Psi_\\max={psi_max:.2e}$',
         legend=False, grid=False, show=False)
-    plt.savefig(f'streamfunction_{sigma:.2f}_{psi_max:.2e}.eps')
+    plt.savefig(f'streamfunction_{name}_{beta:.2f}_{psi_max:.2e}.eps')
     plt.close()
 
     plot_utils.plot_vorticity(
-        x, interface, title=f'Vorticity at $\\sigma={sigma:.2f}$ and $\\Psi_\\max={psi_max:.2e}$',
+        x, interface, title=f'Vorticity at $\\beta={beta:.2f}$ and $\\Psi_\\max={psi_max:.2e}$',
         legend=False, grid=False, show=False)
-    plt.savefig(f'vorticity_{sigma:.2f}_{psi_max:.2e}.eps')
+    plt.savefig(f'vorticity_{name}_{beta:.2f}_{psi_max:.2e}.eps')
     plt.close()
 
     plot_utils.plot_value(
         utils.create_state_mtx(x, interface=interface)[:, :, 0, 4],
-        interface, title=f'Salinity at $\\sigma={sigma:.2f}$ and $\\Psi_\\max={psi_max:.2e}$',
+        interface, title=f'Salinity at $\\beta={beta:.2f}$ and $\\Psi_\\max={psi_max:.2e}$',
         legend=False, grid=False, show=False)
-    plt.savefig(f'salinity_{sigma:.2f}_{psi_max:.2e}.eps')
+    plt.savefig(f'salinity_{name}_{beta:.2f}_{psi_max:.2e}.eps')
     plt.close()
 
 
@@ -51,8 +52,8 @@ def main():
     solutions are written to files instead of storing them in memory and showing them on
     the screen.'''
 
-    nx = 60
-    ny = 30
+    nx = 40
+    ny = 80
 
     # Define the problem
     parameters = {'Problem Type': 'AMOC',
@@ -60,12 +61,17 @@ def main():
                   'Rayleigh Number': 4e4,
                   'Prandtl Number': 2.25,
                   'Lewis Number': 1,
-                  'Freshwater Flux': 0,
+                  'Top Boundary Layer Thickness': 0.05,
+                  'Beta': 0,
+                  'Tau S': 1,
+                  'Tau T': 0.1,
                   'X-max': 5,
                   # Give back extra output (this is also more expensive)
                   'Verbose': False}
 
-    interface = Interface(parameters, nx, ny)
+    y = utils.create_stretched_coordinate_vector(0, 1, ny, 1.5)
+
+    interface = Interface(parameters, nx, ny, y=y)
     continuation = Continuation(interface, newton_tolerance=1e-6)
 
     # First increase the temperature forcing to the desired value
@@ -73,85 +79,49 @@ def main():
 
     ds = 0.1
     target = 1
-    x1 = continuation.continuation(x0, 'Temperature Forcing', 0, target, ds)[0]
+    x1 = continuation.continuation(x0, 'Temperature Forcing', 0, target, ds, ds_min=1e-8)[0]
 
     # Write the solution to a file
     interface.save_state('x1', x1)
 
-    generate_plots(interface, x1, 0)
-
     # Enable the lines below to load the solution instead. Same for the ones below
-    # parameters['Temperature Forcing'] = 1
     # x1 = interface.load_state('x1')
 
-    # Perform a continuation to freshwater flux 0.2 without detecting bifurcation points
-    # and use this in the bifurcation diagram
-    data2 = Data()
+    generate_plots(interface, x1, 'temperature', 1)
 
-    ds = 0.05
-    target = 0.2
-    x2, mu2 = continuation.continuation(x1, 'Freshwater Flux', 0, target,
-                                        ds, ds_min=1e-12, callback=data2.callback)
+    ds = 0.1
+    target = 1
+    x2 = continuation.continuation(x1, 'Salinity Forcing', 0, target, ds, ds_min=1e-8)[0]
 
     # Write the solution to a file
     interface.save_state('x2', x2)
 
-    generate_plots(interface, x2, mu2)
+    generate_plots(interface, x2, 'salinity', 1)
+    generate_plots(interface, x2, 'beta', 0)
+
+    # Perform a continuation to beta 0.2 without detecting bifurcation points
+    # and use this in the bifurcation diagram
+    data3 = Data()
+
+    ds = 0.05
+    target = 0.2
+    x3, beta3 = continuation.continuation(x2, 'Beta', 0, target,
+                                          ds, ds_min=1e-12, callback=data3.callback)
+
+    # Write the solution to a file
+    interface.save_state('x3', x3)
+
+    generate_plots(interface, x3, 'beta', beta3)
 
     # Write the data to a file
-    with open('data2', 'wb') as f:
-        pickle.dump(data2, f)
-
-    # Enable the lines below to load the data
-    # with open('data2', 'rb') as f:
-    #     data2 = pickle.load(f)
-
-    # Add asymmetry to the problem
-    ds = 0.05
-    target = 1
-    parameters['Freshwater Flux'] = 0
-    x3, mu3 = continuation.continuation(x1, 'Asymmetry Parameter', 0, target, ds, maxit=1)
-
-    # Perform a continuation to freshwater flux 0.2 with asymmetry added to the problem,
-    # meaning we can't stay on the unstable branch
-    ds = 0.01
-    target = 0.2
-    x4, mu4 = continuation.continuation(x3, 'Freshwater Flux', 0, target, ds, ds_min=1e-12)
-
-    # Go back to the symmetric problem
-    ds = -0.05
-    target = 0
-    x5, mu5 = continuation.continuation(x4, 'Asymmetry Parameter', mu3, target, ds)
-
-    # Write the solution to a file
-    interface.save_state('x5', x5)
-
-    generate_plots(interface, x5, mu5)
-
-    x5 = interface.load_state('x5')
-    mu4 = 0.2
-
-    # Now compute the stable branch after the pitchfork bifurcation by going backwards
-    # and use this in the bifurcation diagram
-    data6 = Data()
-
-    ds = -0.01
-    target = 0.2
-    x6, mu6 = continuation.continuation(x5, 'Freshwater Flux', mu4, target,
-                                        ds, ds_min=1e-12, ds_max=0.005,
-                                        callback=data6.callback)
-
-    # Write the solution to a file
-    interface.save_state('x6', x6)
-
-    generate_plots(interface, x6, mu6)
+    with open('data3', 'wb') as f:
+        pickle.dump(data3, f)
 
     # Plot a bifurcation diagram
     plt.title(f'Bifurcation diagram for the AMOC model with $n_x={nx}$, $n_y={ny}$')
-    plt.xlabel('$\\sigma$')
+    plt.xlabel('$\\beta$')
     plt.ylabel('Maximum value of the streamfunction')
-    plt.plot(data2.mu, data2.value)
-    plt.plot(data6.mu, data6.value)
+    plt.plot(data3.mu, data3.value)
     plt.savefig('bifurcation_diagram.eps')
     plt.close()
 

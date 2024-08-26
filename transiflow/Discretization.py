@@ -244,6 +244,16 @@ class Discretization:
             atom += 1 / (Pr * numpy.sqrt(Gr)) * (self.T_xx() + self.T_yy())
             atom += self.forward_average_T_y()
 
+            tau_T = self.get_parameter('Tau T')
+
+            T = self.T()
+            h = self.h_y()
+            for j in range(self.ny):
+                T[:, j, :, :, :, :, :, :] *= h[j] / tau_T
+
+            theta = self.get_parameter('Temperature Forcing')
+            atom -= theta / numpy.sqrt(Gr) * T
+
         if self.dof > 4:
             atom += 1 / (Le * Pr * numpy.sqrt(Gr)) * (self.S_xx() + self.S_yy())
             atom -= self.forward_average_S_y()
@@ -452,6 +462,11 @@ class Discretization:
 
         return utils.create_state_vec(out_mtx, self.nx, self.ny, self.nz, self.dof)
 
+    def _get_column(self, i, j, k, x, y, z, d):
+        return ((i + x - 1) % self.nx) * self.dof \
+            + ((j + y - 1) % self.ny) * self.nx * self.dof + \
+            + ((k + z - 1) % self.nz) * self.nx * self.ny * self.dof + d
+
     def assemble_jacobian(self, atom):
         '''Assemble the Jacobian. Optimized version of
 
@@ -493,9 +508,7 @@ class Discretization:
         for k, j, i, d1 in numpy.ndindex(self.nz, self.ny, self.nx, self.dof):
             for d2, x, y, z in configs:
                 if abs(atom[i, j, k, d1, d2, x, y, z]) > 1e-14:
-                    jcoA[idx] = ((i + x - 1) % self.nx) * self.dof \
-                        + ((j + y - 1) % self.ny) * self.nx * self.dof + \
-                        + ((k + z - 1) % self.nz) * self.nx * self.ny * self.dof + d2
+                    jcoA[idx] = self._get_column(i, j, k, x, y, z, d2)
                     coA[idx] = atom[i, j, k, d1, d2, x, y, z]
                     idx += 1
             row += 1
@@ -551,7 +564,6 @@ class Discretization:
             self.dof = self.dim + 2
         elif self.problem_type_equals('AMOC'):
             self.dof = self.dim + 3
-
 
     def boundaries(self, atom):
         '''Compute boundary conditions for the currently defined problem type.
@@ -639,42 +651,62 @@ class Discretization:
             boundary_conditions.free_slip_east(atom)
             boundary_conditions.free_slip_west(atom)
 
+            boundary_conditions.heat_flux_north(atom, 0)
             boundary_conditions.heat_flux_south(atom, 0)
+            boundary_conditions.salinity_flux_north(atom, 0)
             boundary_conditions.salinity_flux_south(atom, 0)
+            boundary_conditions.free_slip_north(atom)
             boundary_conditions.free_slip_south(atom)
 
-            x = utils.compute_coordinate_vector_centers(self.x)
+            Ra = self.get_parameter('Rayleigh Number', 1.0)
+            Pr = self.get_parameter('Prandtl Number', 1.0)
+            Gr = self.get_parameter('Grashof Number', Ra / Pr)
 
-            theta = self.get_parameter('Temperature Forcing')
-            asym = self.get_parameter('Asymmetry Parameter')
+            frc = numpy.zeros((self.nx, self.ny, self.nz, self.dof))
+
+            x = utils.compute_coordinate_vector_centers(self.x)[:self.nx]
             A = self.x[self.nx-1]
 
-            T_S = numpy.zeros((self.nx + 2, self.nz + 2))
-            T_S[:, 0] = 1 / 2 * ((1 - asym) * numpy.cos(2 * numpy.pi * (x / A - 1 / 2))
-                                 + asym * numpy.cos(numpy.pi * x / A) + 1)
-            boundary_conditions.temperature_north(atom, theta * T_S)
+            # Temperature forcing
+            theta = self.get_parameter('Temperature Forcing')
+            tau_T = self.get_parameter('Tau T')
+            T_S = 1 / 2 * (numpy.cos(2 * numpy.pi * (x / A - 1 / 2)) + 1)
 
-            sigma = self.get_parameter('Freshwater Flux')
-            p = 2
+            h = self.h_y()
+            for j in range(self.ny):
+                frc[:, j, 0, self.dim + 1] = theta / numpy.sqrt(Gr) * h[j] * T_S / tau_T
 
-            Q_S = numpy.zeros((self.nx + 2, self.nz + 2))
-            Q_S[:, 0] = 3 * numpy.cos(p * numpy.pi * (x / A - 1 / 2)) - 6 / (p * numpy.pi) * numpy.sin(p * numpy.pi / 2)
-            boundary_conditions.salinity_flux_north(atom, sigma * Q_S)
+            # Salinity forcing
+            sigma = self.get_parameter('Salinity Forcing')
+            beta = self.get_parameter('Beta')
+            tau_S = self.get_parameter('Tau S')
+            S_S = 3.5 * numpy.cos(2 * numpy.pi * (x / A - 1 / 2)) - beta * numpy.sin(numpy.pi * (x / A - 1 / 2))
 
-            boundary_conditions.free_slip_north(atom)
+            h = self.h_y()
+            for j in range(self.ny):
+                frc[:, j, 0, self.dim + 2] = sigma / numpy.sqrt(Gr) * h[j] * S_S / tau_S
+
+            frc = utils.create_state_vec(frc, self.nx, self.ny, self.nz, self.dof)
+            frc += boundary_conditions.get_forcing()
+
+            # Fix one temperature value
+            row = self.dim + 1
+            for k, j, i, d, z, y, x in numpy.ndindex(self.nz, self.ny, self.nx, self.dof, 3, 3, 3):
+                if self._get_column(i, j, k, x, y, z, self.dim + 1) == row:
+                    atom[i, j, k, d, self.dim+1, x, y, z] = 0
+
+            atom[0, 0, 0, self.dim+1, self.dim+1, 1, 1, 1] = -1
+            frc[row] = 0
 
             # Fix one salinity value
             row = self.dim + 2
             for k, j, i, d, z, y, x in numpy.ndindex(self.nz, self.ny, self.nx, self.dof, 3, 3, 3):
-                if ((i + x - 1) % self.nx) * self.dof \
-                   + ((j + y - 1) % self.ny) * self.nx * self.dof + \
-                   + ((k + z - 1) % self.nz) * self.nx * self.ny * self.dof + self.dim + 2 == row:
+                if self._get_column(i, j, k, x, y, z, self.dim + 2) == row:
                     atom[i, j, k, d, self.dim+2, x, y, z] = 0
 
             atom[0, 0, 0, self.dim+2, self.dim+2, 1, 1, 1] = -1
-
-            frc = boundary_conditions.get_forcing()
             frc[row] = 0
+
             return frc
         else:
             raise Exception('Invalid problem type %s' % self.get_parameter('Problem Type'))
@@ -902,6 +934,11 @@ class Discretization:
         ''':meta private:'''
         return self.C_z(self.dim)
 
+    def T(self):
+        atom = numpy.zeros((self.nx, self.ny, self.nz, self.dof, self.dof, 3, 3, 3))
+        atom[:, :, :, self.dim+1, self.dim+1, 1, 1, 1] = 1
+        return atom
+
     @staticmethod
     def _backward_u_x(atom, i, j, k, x, y, z):
         # volume size in the y direction
@@ -1065,6 +1102,12 @@ class Discretization:
             frc[i, j, k, 0] = - (1 - asym) * numpy.cos(2 * numpy.pi * y) - asym * numpy.cos(numpy.pi * y)
             frc[i, j, k, 0] *= alpha / (2 * numpy.pi) * dx * dy * dz
         return utils.create_state_vec(frc, self.nx, self.ny, self.nz, self.dof)
+
+    def h_y(self):
+        ''':meta private:'''
+        delta = self.get_parameter('Top Boundary Layer Thickness')
+        y = utils.compute_coordinate_vector_centers(self.y)
+        return numpy.exp((y - 1) / delta)
 
     @staticmethod
     def _mass_x(atom, i, j, k, x, y, z):
